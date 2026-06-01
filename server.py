@@ -1,70 +1,102 @@
 import base64
-import json
-from flask import Flask, render_template, request
-from worker import speech_to_text, text_to_speech, openai_process_message
-from flask_cors import CORS
 import os
 
+from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS
+
+from worker import DEFAULT_OPENAI_MODEL, openai_process_message, speech_to_text, text_to_speech
+
+
 app = Flask(__name__)
-cors = CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+SUPPORTED_MODELS = [
+    {
+        "id": "gpt-5-nano",
+        "label": "GPT-5 Nano",
+        "description": "Fast and lightweight for short assistant replies.",
+    },
+    {
+        "id": "gpt-5-mini",
+        "label": "GPT-5 Mini",
+        "description": "Balanced for better writing and reasoning.",
+    },
+    {
+        "id": "gpt-4.1-mini",
+        "label": "GPT-4.1 Mini",
+        "description": "Strong general-purpose model for the demo.",
+    },
+]
 
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def index():
-    return render_template('index.html')
+    return render_template(
+        "index.html",
+        default_model=DEFAULT_OPENAI_MODEL,
+        supported_models=SUPPORTED_MODELS,
+    )
 
 
-@app.route('/speech-to-text', methods=['POST'])
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify(
+        {
+            "status": "ok",
+            "default_model": DEFAULT_OPENAI_MODEL,
+            "supported_models": [model["id"] for model in SUPPORTED_MODELS],
+        }
+    )
+
+
+@app.route("/speech-to-text", methods=["POST"])
 def speech_to_text_route():
-    print("processing speech-to-text")
     audio_binary = request.data
-    text = speech_to_text(audio_binary)
+    if not audio_binary:
+        return jsonify({"error": "audio payload is required"}), 400
 
-    response = app.response_class(
-        response=json.dumps({'text': text}),
-        status=200,
-        mimetype='application/json'
-    )
-
-    print(response)
-    print(response.data)
-    return response
+    try:
+        text = speech_to_text(audio_binary)
+        return jsonify({"text": text})
+    except Exception as exc:
+        return jsonify({"error": f"speech-to-text failed: {exc}"}), 502
 
 
-
-@app.route('/process-message', methods=['POST'])
+@app.route("/process-message", methods=["POST"])
 def process_message_route():
-    user_message = request.json['userMessage']
-    print("user message" , user_message)
+    payload = request.get_json(silent=True) or {}
+    user_message = (payload.get("userMessage") or "").strip()
+    voice = payload.get("voice", "default")
+    model_name = payload.get("modelName") or DEFAULT_OPENAI_MODEL
 
-    voice = request.json['voice']
-    print("voice" , voice)
+    if not user_message:
+        return jsonify({"error": "userMessage is required"}), 400
 
-    openai_response_text = openai_process_message(user_message)
+    if model_name not in {model["id"] for model in SUPPORTED_MODELS}:
+        return jsonify({"error": "unsupported model"}), 400
 
-    openai_response_text = os.linesep.join([s for s in openai_response_text.splitlines() if s])
+    try:
+        openai_response_text = openai_process_message(user_message, model_name=model_name)
+        openai_response_text = os.linesep.join(
+            [line for line in openai_response_text.splitlines() if line]
+        ).strip()
+        openai_response_speech = text_to_speech(openai_response_text, voice)
+        openai_response_speech = base64.b64encode(openai_response_speech).decode("utf-8")
+    except Exception as exc:
+        return jsonify({"error": f"processing failed: {exc}"}), 502
 
-    openai_response_speech = text_to_speech(openai_response_text, voice)
-
-    openai_response_speech = base64.b64encode(openai_response_speech).decode('utf-8')
-
-    response = app.response_class(
-        response=json.dumps({"openaiResponseText": openai_response_text, "openaiResponseSpeech": openai_response_speech}),
-        status=200,
-        mimetype='application/json'
+    return jsonify(
+        {
+            "openaiResponseText": openai_response_text,
+            "openaiResponseSpeech": openai_response_speech,
+            "modelName": model_name,
+        }
     )
-
-    print(response)
-
-    
-
-
-
-
-
-
-    return response
 
 
 if __name__ == "__main__":
-    app.run(port=8000, host='0.0.0.0')
+    app.run(
+        port=int(os.getenv("PORT", "8000")),
+        host="0.0.0.0",
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+    )

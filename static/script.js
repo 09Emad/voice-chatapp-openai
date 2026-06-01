@@ -1,14 +1,16 @@
-let lightMode = true;
 let recorder = null;
 let recording = false;
 let voiceOption = "default";
+let selectedModel = "";
+let lightMode = true;
+
 const responses = [];
 const botRepeatButtonIDToIndexMap = {};
 const userRepeatButtonIDToRecordingMap = {};
 const baseUrl = window.location.origin;
 
 async function showBotLoadingAnimation() {
-  await sleep(500);
+  await sleep(200);
   $(".loading-animation")[1].style.display = "inline-block";
 }
 
@@ -25,14 +27,19 @@ function hideUserLoadingAnimation() {
   $(".loading-animation")[0].style.display = "none";
 }
 
+const setConnectionStatus = (text) => {
+  $("#connection-status").text(text);
+};
+
 const getSpeechToText = async (userRecording) => {
   let response = await fetch(baseUrl + "/speech-to-text", {
     method: "POST",
     body: userRecording.audioBlob,
   });
-  console.log(response);
   response = await response.json();
-  console.log(response);
+  if (!response.text) {
+    throw new Error(response.error || "Speech recognition failed");
+  }
   return response.text;
 };
 
@@ -40,19 +47,25 @@ const processUserMessage = async (userMessage) => {
   let response = await fetch(baseUrl + "/process-message", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ userMessage: userMessage, voice: voiceOption }),
+    body: JSON.stringify({
+      userMessage: userMessage,
+      voice: voiceOption,
+      modelName: selectedModel,
+    }),
   });
   response = await response.json();
-  console.log(response);
+  if (response.error) {
+    throw new Error(response.error);
+  }
   return response;
 };
 
 const cleanTextInput = (value) => {
   return value
-    .trim() // remove starting and ending spaces
-    .replace(/[\n\t]/g, "") // remove newlines and tabs
-    .replace(/<[^>]*>/g, "") // remove HTML tags
-    .replace(/[<>&;]/g, ""); // sanitize inputs
+    .trim()
+    .replace(/[\n\t]/g, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>&;]/g, "");
 };
 
 const recordAudio = () => {
@@ -73,8 +86,11 @@ const recordAudio = () => {
           const audioBlob = new Blob(audioChunks, { type: "audio/mpeg" });
           const audioUrl = URL.createObjectURL(audioBlob);
           const audio = new Audio(audioUrl);
-          const play = () => audio.play();
-          resolve({ audioBlob, audioUrl, play });
+          resolve({
+            audioBlob,
+            audioUrl,
+            play: () => audio.play(),
+          });
         });
 
         mediaRecorder.stop();
@@ -91,18 +107,21 @@ const toggleRecording = async () => {
     recorder = await recordAudio();
     recording = true;
     recorder.start();
-  } else {
-    const audio = await recorder.stop();
-    sleep(1000);
-    return audio;
+    setConnectionStatus("recording");
+    return null;
   }
+
+  const audio = await recorder.stop();
+  recording = false;
+  setConnectionStatus("processing");
+  return audio;
 };
 
 const playResponseAudio = (function () {
   const df = document.createDocumentFragment();
   return function Sound(src) {
     const snd = new Audio(src);
-    df.appendChild(snd); // keep in fragment until finished playing
+    df.appendChild(snd);
     snd.addEventListener("ended", function () {
       df.removeChild(snd);
     });
@@ -116,33 +135,33 @@ const getRandomID = () => {
 };
 
 const scrollToBottom = () => {
-  // Scroll the chat window to the bottom
   $("#chat-window").animate({
     scrollTop: $("#chat-window")[0].scrollHeight,
   });
 };
-const populateUserMessage = (userMessage, userRecording) => {
-  // Clear the input field
-  $("#message-input").val("");
 
-  // Append the user's message to the message list
+const populateUserMessage = (userMessage, userRecording) => {
+  $("#message-input").val("");
 
   if (userRecording) {
     const userRepeatButtonID = getRandomID();
     userRepeatButtonIDToRecordingMap[userRepeatButtonID] = userRecording;
     hideUserLoadingAnimation();
     $("#message-list").append(
-      `<div class='message-line my-text'><div class='message-box my-text${
-        !lightMode ? " dark" : ""
-      }'><div class='me'>${userMessage}</div></div>
-            <button id='${userRepeatButtonID}' class='btn volume repeat-button' onclick='userRepeatButtonIDToRecordingMap[this.id].play()'><i class='fa fa-volume-up'></i></button>
-            </div>`
+      `<div class="message-line my-text">
+        <div class="message-box my-text${!lightMode ? " dark" : ""}">
+          <div class="me">${userMessage}</div>
+        </div>
+        <button id="${userRepeatButtonID}" class="btn volume repeat-button" onclick="userRepeatButtonIDToRecordingMap[this.id].play()"><i class="fa fa-volume-up"></i></button>
+      </div>`
     );
   } else {
     $("#message-list").append(
-      `<div class='message-line my-text'><div class='message-box my-text${
-        !lightMode ? " dark" : ""
-      }'><div class='me'>${userMessage}</div></div></div>`
+      `<div class="message-line my-text">
+        <div class="message-box my-text${!lightMode ? " dark" : ""}">
+          <div class="me">${userMessage}</div>
+        </div>
+      </div>`
     );
   }
 
@@ -157,79 +176,75 @@ const populateBotResponse = async (userMessage) => {
   const repeatButtonID = getRandomID();
   botRepeatButtonIDToIndexMap[repeatButtonID] = responses.length - 1;
   hideBotLoadingAnimation();
-  // Append the random message to the message list
+
   $("#message-list").append(
-    `<div class='message-line'><div class='message-box${
-      !lightMode ? " dark" : ""
-    }'>${
-      response.openaiResponseText
-    }</div><button id='${repeatButtonID}' class='btn volume repeat-button' onclick='playResponseAudio("data:audio/wav;base64," + responses[botRepeatButtonIDToIndexMap[this.id]].openaiResponseSpeech);console.log(this.id)'><i class='fa fa-volume-up'></i></button></div>`
+    `<div class="message-line">
+      <div class="message-box${!lightMode ? " dark" : ""}">${response.openaiResponseText}</div>
+      <button id="${repeatButtonID}" class="btn volume repeat-button" onclick='playResponseAudio("data:audio/wav;base64," + responses[botRepeatButtonIDToIndexMap[this.id]].openaiResponseSpeech)'><i class="fa fa-volume-up"></i></button>
+    </div>`
   );
 
   playResponseAudio("data:audio/wav;base64," + response.openaiResponseSpeech);
-
+  setConnectionStatus("ready");
   scrollToBottom();
 };
 
+const loadModels = async () => {
+  const response = await fetch(baseUrl + "/health");
+  const data = await response.json();
+  const supportedModels = data.supported_models || [];
+  const modelSelect = $("#model-options");
+  modelSelect.empty();
+
+  supportedModels.forEach((modelId) => {
+    const option = `<option value="${modelId}">${modelId}</option>`;
+    modelSelect.append(option);
+  });
+
+  selectedModel = supportedModels[0] || "";
+  modelSelect.val(selectedModel);
+};
+
 $(document).ready(function () {
-  // Listen for the "Enter" key being pressed in the input field
+  loadModels();
+
   $("#message-input").keyup(function (event) {
     let inputVal = cleanTextInput($("#message-input").val());
 
-    if (event.keyCode === 13 && inputVal != "") {
+    if (event.keyCode === 13 && inputVal !== "") {
       const message = inputVal;
-
       populateUserMessage(message, null);
       populateBotResponse(message);
     }
 
     inputVal = $("#message-input").val();
 
-    if (inputVal == "" || inputVal == null) {
-      $("#send-button")
-        .removeClass("send")
-        .addClass("microphone")
-        .html("<i class='fa fa-microphone'></i>");
+    if (inputVal === "" || inputVal == null) {
+      $("#send-button").removeClass("send").addClass("microphone").html("<i class='fa fa-microphone'></i>");
     } else {
-      $("#send-button")
-        .removeClass("microphone")
-        .addClass("send")
-        .html("<i class='fa fa-paper-plane'></i>");
+      $("#send-button").removeClass("microphone").addClass("send").html("<i class='fa fa-paper-plane'></i>");
     }
   });
 
-  // When the user clicks the "Send" button
   $("#send-button").click(async function () {
     if ($("#send-button").hasClass("microphone") && !recording) {
-      toggleRecording();
+      await toggleRecording();
       $(".fa-microphone").css("color", "#f44336");
-      console.log("start recording");
-      recording = true;
     } else if (recording) {
-      toggleRecording().then(async (userRecording) => {
-        console.log("stop recording");
-        await showUserLoadingAnimation();
-        const userMessage = await getSpeechToText(userRecording);
-        populateUserMessage(userMessage, userRecording);
-        populateBotResponse(userMessage);
-      });
+      const userRecording = await toggleRecording();
       $(".fa-microphone").css("color", "#125ee5");
-      recording = false;
+      await showUserLoadingAnimation();
+      const userMessage = await getSpeechToText(userRecording);
+      populateUserMessage(userMessage, userRecording);
+      populateBotResponse(userMessage);
     } else {
-      // Get the message the user typed in
       const message = cleanTextInput($("#message-input").val());
-
       populateUserMessage(message, null);
       populateBotResponse(message);
-
-      $("#send-button")
-        .removeClass("send")
-        .addClass("microphone")
-        .html("<i class='fa fa-microphone'></i>");
+      $("#send-button").removeClass("send").addClass("microphone").html("<i class='fa fa-microphone'></i>");
     }
   });
 
-  // handle the event of switching light-dark mode
   $("#light-dark-mode-switch").change(function () {
     $("body").toggleClass("dark-mode");
     $(".message-box").toggleClass("dark");
@@ -240,6 +255,12 @@ $(document).ready(function () {
 
   $("#voice-options").change(function () {
     voiceOption = $(this).val();
-    console.log(voiceOption);
   });
+
+  $("#model-options").change(function () {
+    selectedModel = $(this).val();
+    $("#default-model-label").text(selectedModel);
+  });
+
+  setConnectionStatus("ready");
 });

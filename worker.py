@@ -1,69 +1,65 @@
-from openai import OpenAI
+import os
+
 import requests
+from openai import OpenAI
 
 openai_client = OpenAI()
 
+WATSON_BASE_URL = "https://sn-watson-stt.labs.skills.network"
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
 
 
 def speech_to_text(audio_binary):
+    api_url = f"{WATSON_BASE_URL}/speech-to-text/api/v1/recognize"
+    params = {"model": "en-US_Multimedia"}
 
-	base_url = 'https://sn-watson-stt.labs.skills.network'
-	api_url = base_url+'/speech-to-text/api/v1/recognize'
+    response = requests.post(api_url, params=params, data=audio_binary, timeout=60)
+    response.raise_for_status()
+    payload = response.json()
 
-	params = {
-		'model': 'en-US_Multimedia',
-	}
+    results = payload.get("results") or []
+    if not results:
+        return ""
 
-	body = audio_binary
+    alternatives = results[-1].get("alternatives") or []
+    if not alternatives:
+        return ""
 
-	response = requests.post(api_url, params=params, data=audio_binary).json()
-
-	text = 'null'
-	while bool(response.get('results')):
-		print('speech to text response:', response)
-		text = response.get('results').pop().get('alternatives').pop().get('transcript')
-		print('recognised text: ', text)
-		return text
+    return alternatives[-1].get("transcript", "").strip()
 
 
-def text_to_speech(text, voice=""):
-    base_url = 'https://sn-watson-stt.labs.skills.network'
-    api_url = base_url + '/text-to-speech/api/v1/synthesize?output=output_text.wav'
+def text_to_speech(text, voice="default"):
+    api_url = f"{WATSON_BASE_URL}/text-to-speech/api/v1/synthesize?output=output_text.wav"
 
-    if voice != "" and voice != "default":
-        api_url += "&voice=" + voice
+    if voice and voice != "default":
+        api_url += f"&voice={voice}"
 
     headers = {
-       'Accept': 'audio/wav',
-    'Content-Type': 'application/json', 
+        "Accept": "audio/wav",
+        "Content-Type": "application/json",
     }
 
-    json_data = {
-    'text': text,
-    }
-
-    response = requests.post(api_url , headers = headers , json = json_data)
-
-    print('text to speech response:', response)
-    
-    # 6. إرجاع محتوى الصوت الثنائي الصافي
+    response = requests.post(api_url, headers=headers, json={"text": text}, timeout=60)
+    response.raise_for_status()
     return response.content
 
-def openai_process_message(user_message):
-    prompt = "Act like a personal assistant. You can respond to questions, translate sentences, summarize news, and give recommendations. Keep responses concise - 2 to 3 sentences maximum."
 
+def openai_process_message(user_message, model_name=None):
+    prompt = (
+        "Act like a personal assistant. You can respond to questions, translate sentences, "
+        "summarize news, and give recommendations. Keep responses concise and helpful."
+    )
+
+    selected_model = model_name or DEFAULT_OPENAI_MODEL
     openai_response = openai_client.chat.completions.create(
-        model="gpt-5-nano", 
+        model=selected_model,
         messages=[
             {"role": "system", "content": prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_message},
         ],
-        max_completion_tokens=1000
+        max_completion_tokens=600,
     )
-    print("openai response:", openai_response)
-    
-    # 3. تفكيك الاستجابة للحصول على نص الرد الصافي
-    response_text = openai_response.choices[0].message.content
-    return response_text
+
+    return openai_response.choices[0].message.content.strip()
 
 
