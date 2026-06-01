@@ -31,10 +31,16 @@ A polished voice assistant built with Flask, OpenAI, speech-to-text, and text-to
 pip install -r requirements.txt
 ```
 
-Set your OpenAI key before running:
+Set your OpenAI key before running. On Windows PowerShell:
 
-```bash
-set OPENAI_API_KEY=your_key_here
+```powershell
+setx OPENAI_API_KEY "your_key_here"
+```
+
+Then close and reopen PowerShell, or set it for the current session with:
+
+```powershell
+$env:OPENAI_API_KEY = "your_key_here"
 ```
 
 ## Run

@@ -8,6 +8,8 @@ const responses = [];
 const botRepeatButtonIDToIndexMap = {};
 const userRepeatButtonIDToRecordingMap = {};
 const baseUrl = window.location.origin;
+const errorBanner = $("#error-banner");
+const sendButton = $("#send-button");
 
 async function showBotLoadingAnimation() {
   await sleep(200);
@@ -31,20 +33,37 @@ const setConnectionStatus = (text) => {
   $("#connection-status").text(text);
 };
 
+const showError = (message) => {
+  errorBanner.text(message);
+  errorBanner.removeClass("hidden");
+  setConnectionStatus("error");
+};
+
+const hideError = () => {
+  errorBanner.addClass("hidden");
+};
+
+const setLoadingState = (isLoading) => {
+  sendButton.prop("disabled", isLoading);
+  $("#message-input").prop("disabled", isLoading);
+  $("#model-options").prop("disabled", isLoading);
+  $("#voice-options").prop("disabled", isLoading);
+};
+
 const getSpeechToText = async (userRecording) => {
-  let response = await fetch(baseUrl + "/speech-to-text", {
+  const response = await fetch(baseUrl + "/speech-to-text", {
     method: "POST",
     body: userRecording.audioBlob,
   });
-  response = await response.json();
-  if (!response.text) {
-    throw new Error(response.error || "Speech recognition failed");
+  const payload = await response.json();
+  if (!payload.text) {
+    throw new Error(payload.error || "Speech recognition failed.");
   }
-  return response.text;
+  return payload.text;
 };
 
 const processUserMessage = async (userMessage) => {
-  let response = await fetch(baseUrl + "/process-message", {
+  const response = await fetch(baseUrl + "/process-message", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -53,11 +72,14 @@ const processUserMessage = async (userMessage) => {
       modelName: selectedModel,
     }),
   });
-  response = await response.json();
-  if (response.error) {
-    throw new Error(response.error);
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error || "AI processing failed.");
   }
-  return response;
+  if (!payload.openaiResponseText || !payload.openaiResponseSpeech) {
+    throw new Error("Incomplete response from server.");
+  }
+  return payload;
 };
 
 const cleanTextInput = (value) => {
@@ -69,8 +91,18 @@ const cleanTextInput = (value) => {
 };
 
 const recordAudio = () => {
-  return new Promise(async (resolve) => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  return new Promise(async (resolve, reject) => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return reject(new Error("Microphone access is not supported by this browser."));
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      return reject(new Error("Microphone permission is required to record audio."));
+    }
+
     const mediaRecorder = new MediaRecorder(stream);
     const audioChunks = [];
 
@@ -104,17 +136,29 @@ const sleep = (time) => new Promise((resolve) => setTimeout(resolve, time));
 
 const toggleRecording = async () => {
   if (!recording) {
-    recorder = await recordAudio();
-    recording = true;
-    recorder.start();
-    setConnectionStatus("recording");
-    return null;
+    try {
+      recorder = await recordAudio();
+      recording = true;
+      recorder.start();
+      setConnectionStatus("recording");
+      hideError();
+      return null;
+    } catch (err) {
+      showError(err.message || "Unable to access your microphone.");
+      return null;
+    }
   }
 
-  const audio = await recorder.stop();
-  recording = false;
-  setConnectionStatus("processing");
-  return audio;
+  try {
+    const audio = await recorder.stop();
+    recording = false;
+    setConnectionStatus("processing");
+    return audio;
+  } catch (err) {
+    recording = false;
+    showError(err.message || "Unable to stop recording.");
+    return null;
+  }
 };
 
 const playResponseAudio = (function () {
@@ -169,40 +213,62 @@ const populateUserMessage = (userMessage, userRecording) => {
 };
 
 const populateBotResponse = async (userMessage) => {
+  hideError();
+  setLoadingState(true);
+  setConnectionStatus("thinking");
   await showBotLoadingAnimation();
-  const response = await processUserMessage(userMessage);
-  responses.push(response);
 
-  const repeatButtonID = getRandomID();
-  botRepeatButtonIDToIndexMap[repeatButtonID] = responses.length - 1;
-  hideBotLoadingAnimation();
+  try {
+    const response = await processUserMessage(userMessage);
+    responses.push(response);
 
-  $("#message-list").append(
-    `<div class="message-line">
-      <div class="message-box${!lightMode ? " dark" : ""}">${response.openaiResponseText}</div>
-      <button id="${repeatButtonID}" class="btn volume repeat-button" onclick='playResponseAudio("data:audio/wav;base64," + responses[botRepeatButtonIDToIndexMap[this.id]].openaiResponseSpeech)'><i class="fa fa-volume-up"></i></button>
-    </div>`
-  );
+    const repeatButtonID = getRandomID();
+    botRepeatButtonIDToIndexMap[repeatButtonID] = responses.length - 1;
+    hideBotLoadingAnimation();
 
-  playResponseAudio("data:audio/wav;base64," + response.openaiResponseSpeech);
-  setConnectionStatus("ready");
-  scrollToBottom();
+    $("#message-list").append(
+      `<div class="message-line">
+        <div class="message-box${!lightMode ? " dark" : ""}">${response.openaiResponseText}</div>
+        <button id="${repeatButtonID}" class="btn volume repeat-button" onclick='playResponseAudio("data:audio/wav;base64," + responses[botRepeatButtonIDToIndexMap[this.id]].openaiResponseSpeech)'><i class="fa fa-volume-up"></i></button>
+      </div>`
+    );
+
+    playResponseAudio("data:audio/wav;base64," + response.openaiResponseSpeech);
+    setConnectionStatus("ready");
+  } catch (err) {
+    hideBotLoadingAnimation();
+    showError(err.message || "There was a problem processing your request.");
+  } finally {
+    setLoadingState(false);
+    scrollToBottom();
+  }
 };
 
 const loadModels = async () => {
-  const response = await fetch(baseUrl + "/health");
-  const data = await response.json();
-  const supportedModels = data.supported_models || [];
-  const modelSelect = $("#model-options");
-  modelSelect.empty();
+  try {
+    const response = await fetch(baseUrl + "/health");
+    const data = await response.json();
+    const supportedModels = data.supported_models || [];
+    const modelSelect = $("#model-options");
+    modelSelect.empty();
 
-  supportedModels.forEach((modelId) => {
-    const option = `<option value="${modelId}">${modelId}</option>`;
-    modelSelect.append(option);
-  });
+    if (!supportedModels.length) {
+      throw new Error("No models are available yet.");
+    }
 
-  selectedModel = supportedModels[0] || "";
-  modelSelect.val(selectedModel);
+    supportedModels.forEach((modelId) => {
+      const option = `<option value="${modelId}">${modelId}</option>`;
+      modelSelect.append(option);
+    });
+
+    selectedModel = supportedModels[0];
+    modelSelect.val(selectedModel);
+    $("#default-model-label").text(selectedModel);
+    setConnectionStatus("ready");
+  } catch (err) {
+    showError(err.message || "Unable to load models.");
+    setConnectionStatus("offline");
+  }
 };
 
 $(document).ready(function () {
@@ -227,22 +293,41 @@ $(document).ready(function () {
   });
 
   $("#send-button").click(async function () {
+    hideError();
+
     if ($("#send-button").hasClass("microphone") && !recording) {
       await toggleRecording();
       $(".fa-microphone").css("color", "#f44336");
-    } else if (recording) {
+      return;
+    }
+
+    if (recording) {
       const userRecording = await toggleRecording();
       $(".fa-microphone").css("color", "#125ee5");
+      if (!userRecording) {
+        return;
+      }
       await showUserLoadingAnimation();
-      const userMessage = await getSpeechToText(userRecording);
-      populateUserMessage(userMessage, userRecording);
-      populateBotResponse(userMessage);
-    } else {
-      const message = cleanTextInput($("#message-input").val());
-      populateUserMessage(message, null);
-      populateBotResponse(message);
-      $("#send-button").removeClass("send").addClass("microphone").html("<i class='fa fa-microphone'></i>");
+      try {
+        const userMessage = await getSpeechToText(userRecording);
+        populateUserMessage(userMessage, userRecording);
+        populateBotResponse(userMessage);
+      } catch (err) {
+        hideUserLoadingAnimation();
+        showError(err.message || "Voice processing failed.");
+        setConnectionStatus("ready");
+      }
+      return;
     }
+
+    const message = cleanTextInput($("#message-input").val());
+    if (!message) {
+      showError("الرجاء كتابة رسالة أو الضغط على الميكروفون للتسجيل الصوتي.");
+      return;
+    }
+    populateUserMessage(message, null);
+    populateBotResponse(message);
+    $("#send-button").removeClass("send").addClass("microphone").html("<i class='fa fa-microphone'></i>");
   });
 
   $("#light-dark-mode-switch").change(function () {

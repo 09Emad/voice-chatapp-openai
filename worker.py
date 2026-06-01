@@ -3,10 +3,22 @@ import os
 import requests
 from openai import OpenAI
 
-openai_client = OpenAI()
-
 WATSON_BASE_URL = "https://sn-watson-stt.labs.skills.network"
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5-nano")
+
+
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_ADMIN_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "مفتاح OpenAI مفقود. عيّن OPENAI_API_KEY قبل تشغيل التطبيق. "
+            "مثال: setx OPENAI_API_KEY \"your_real_key_here\""
+        )
+    if api_key.strip().lower() == "test":
+        raise RuntimeError(
+            "مفتاح OpenAI غير صالح. استبدله بالمفتاح الحقيقي من حسابك."
+        )
+    return OpenAI(api_key=api_key)
 
 
 def speech_to_text(audio_binary):
@@ -51,6 +63,7 @@ def openai_process_message(user_message, model_name=None):
     )
 
     selected_model = model_name or DEFAULT_OPENAI_MODEL
+    openai_client = get_openai_client()
     openai_response = openai_client.chat.completions.create(
         model=selected_model,
         messages=[

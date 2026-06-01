@@ -1,129 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="A polished voice assistant that combines OpenAI, speech-to-text, and text-to-speech in one clean interface."
+      content="واجهة حديثة لتطبيق مساعد صوتي مبني على React و OpenAI وتحويل الكلام إلى نص والعكس."
     />
-    <title>Voice Assistant Studio</title>
-    <link rel="stylesheet" href="../static/style.css" />
+    <title>استوديو المساعد الصوتي</title>
+    <link rel="stylesheet" href="/static/style.css" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-    <script src="../static/script.js" defer></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="hero">
-        <div>
-          <p class="eyebrow">OpenAI Voice Experience</p>
-          <h1>Voice Assistant Studio</h1>
-          <p class="subtitle">
-            Speak or type to get concise AI replies, convert them to speech, and compare models from one polished
-            workspace.
-          </p>
-        </div>
+    <div id="root"></div>
 
-        <div class="hero-actions">
-          <div class="stat">
-            <span>Default model</span>
-            <strong id="default-model-label">{{ default_model }}</strong>
-          </div>
-          <div class="stat">
-            <span>Status</span>
-            <strong id="connection-status">ready</strong>
-          </div>
-        </div>
-      </section>
-
-      <section class="workspace">
-        <aside class="sidebar">
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Model</h2>
-              <p>Choose the generation model for this conversation.</p>
-            </div>
-            <select id="model-options" class="select"></select>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Voice</h2>
-              <p>Choose the spoken voice for replies.</p>
-            </div>
-            <select id="voice-options" class="select">
-              <option value="default">Default</option>
-              <option value="en-US_MichaelV3Voice">Michael (English)</option>
-              <option value="en-US_HenryV3Voice">Henry (English)</option>
-              <option value="en-GB_KateV3Voice">Kate (English)</option>
-              <option value="en-GB_JamesV3Voice">James (English)</option>
-              <option value="en-GB_CharlotteV3Voice">Charlotte (English)</option>
-              <option value="en-US_LisaV3Voice">Lisa (English)</option>
-              <option value="en-US_KevinV3Voice">Kevin (English)</option>
-              <option value="en-US_EmilyV3Voice">Emily (English)</option>
-              <option value="en-US_AllisonV3Voice">Allison (English)</option>
-              <option value="en-US_OliviaV3Voice">Olivia (English)</option>
-            </select>
-          </div>
-
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Tips</h2>
-            </div>
-            <ul class="tip-list">
-              <li>Press Enter to send typed text.</li>
-              <li>Use the microphone button to record audio.</li>
-              <li>Switch models before starting a new conversation.</li>
-            </ul>
-          </div>
-        </aside>
-
-        <section class="chat-card">
-          <header class="chat-header">
-            <div>
-              <h2>Conversation</h2>
-              <p>Messages appear here with playable audio responses.</p>
-            </div>
-            <label class="theme-toggle">
-              <input type="checkbox" id="light-dark-mode-switch" />
-              <span>Dark mode</span>
-            </label>
-          </header>
-
-          <div id="chat-window">
-            <div id="message-list"></div>
-            <div class="loading-animation my-loading">
-              <div class="loading-dots my-loading">
-                <div class="dot"></div>
-                <div class="dot"></div>
-                <div class="dot"></div>
-              </div>
-            </div>
-            <div class="loading-animation">
-              <div class="loading-dots">
-                <div class="dot"></div>
-                <div class="dot"></div>
-                <div class="dot"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="input-group">
-            <input
-              type="text"
-              id="message-input"
-              class="form-control"
-              placeholder="Type your message here..."
-            />
-            <button id="send-button" class="action-button microphone" type="button" aria-label="Record or send">
-              <i class="fa fa-microphone"></i>
-            </button>
-          </div>
-        </section>
-      </section>
-    </main>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="text/babel" src="/static/app.jsx"></script>
   </body>
 </html>

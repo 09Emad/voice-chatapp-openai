@@ -62,6 +62,15 @@ def speech_to_text_route():
         return jsonify({"error": f"speech-to-text failed: {exc}"}), 502
 
 
+def format_openai_error(exc):
+    message = str(exc)
+    if "Incorrect API key provided" in message or "invalid_api_key" in message:
+        return "مفتاح OpenAI غير صالح. عيّن OPENAI_API_KEY إلى مفتاحك الحقيقي."
+    if "Missing OpenAI API key" in message or "OPENAI_API_KEY" in message:
+        return "مفتاح OpenAI مفقود. عيّن OPENAI_API_KEY إلى مفتاحك الحقيقي."
+    return message
+
+
 @app.route("/process-message", methods=["POST"])
 def process_message_route():
     payload = request.get_json(silent=True) or {}
@@ -83,7 +92,8 @@ def process_message_route():
         openai_response_speech = text_to_speech(openai_response_text, voice)
         openai_response_speech = base64.b64encode(openai_response_speech).decode("utf-8")
     except Exception as exc:
-        return jsonify({"error": f"processing failed: {exc}"}), 502
+        error_message = format_openai_error(exc)
+        return jsonify({"error": f"processing failed: {error_message}"}), 502
 
     return jsonify(
         {
